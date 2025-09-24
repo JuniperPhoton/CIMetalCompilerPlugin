@@ -6,8 +6,6 @@ This repo significantly changed some implementations of this [original repo](htt
 
 More details and insights about creating a Swift Package plugin can be [read here](https://juniperphoton.substack.com/p/creating-core-image-metal-shader).
 
-> Note: For Xcode 26 Beta, please make sure to use Beta 6 and later, which fixed some issues regarding Metal shader compilation.
-
 # Background
 
 Why do you need this Swift Package Plugin?
