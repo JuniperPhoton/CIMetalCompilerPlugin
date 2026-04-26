@@ -24,7 +24,7 @@ Add this package as a dependency to your Swift Package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/JuniperPhoton/CIMetalCompilerPlugin", from: "0.11.0")
+    .package(url: "https://github.com/JuniperPhoton/CIMetalCompilerPlugin", from: "0.14.0")
 ]
 ```
 
