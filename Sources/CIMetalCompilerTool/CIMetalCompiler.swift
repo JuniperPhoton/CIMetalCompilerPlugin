@@ -1,5 +1,7 @@
 import ArgumentParser
 import Foundation
+import Subprocess
+import System
 import os
 
 #if !targetEnvironment(macCatalyst)
@@ -9,7 +11,7 @@ import os
 /// https://developer.apple.com/documentation/metal/building-a-shader-library-by-precompiling-source-files
 @main
 @available(macOS 13.0, *)
-struct CIMetalCompilerTool: ParsableCommand {
+struct CIMetalCompilerTool: AsyncParsableCommand {
     @Option(name: .long)
     var output: String
     
@@ -19,10 +21,10 @@ struct CIMetalCompilerTool: ParsableCommand {
     @Argument
     var inputs: [String]
     
-    mutating func run() throws {
+    mutating func run() async throws {
         print("=== run MetalCompilerTool ===")
         
-        let xcRunURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        let executable = Executable.path(FilePath("/usr/bin/xcrun"))
         
         try FileManager.default.createDirectory(atPath: cache, withIntermediateDirectories: true)
         
@@ -33,31 +35,32 @@ struct CIMetalCompilerTool: ParsableCommand {
         // xcrun metal -c -fcikernel MyKernel.metal -o MyKernel.air
         for input in inputs {
             let name = input.nameWithoutExtension
-            
-            let p = Process()
-            p.executableURL = xcRunURL
-            
             let airOutput = "\(cache)/\(name).air"
             
-            p.arguments = [
-                "metal",
-                "-c",
-                "-fcikernel",
-                input,
-                "-o",
-                airOutput,
-                "-fmodules=none" // Must disable fmodules to avoid issues when building in Xcode Cloud.
-            ]
+            let result = try await Subprocess.run(
+                executable,
+                arguments: Arguments([
+                    "metal",
+                    "-c",
+                    "-fcikernel",
+                    input,
+                    "-o",
+                    airOutput,
+                    "-fmodules=none" // Must disable fmodules to avoid issues when building in Xcode Cloud.
+                ]),
+                output: .discarded
+            )
             
-            try p.run()
-            p.waitUntilExit()
-            let status = p.terminationStatus
-
-            if status != 0 {
-                throw CompileError(message: "Failed to compile \(input) with exit code \(status)")
-            } else {
-                print("compiled \(input) to \(airOutput)")
+            switch result.terminationStatus {
+            case .exited(let code):
+                if code != 0 {
+                    throw CompileError(message: "Failed to compile \(input) with exit code \(code)")
+                }
+            case .unhandledException(let code):
+                throw CompileError(message: "Failed to compile \(input) with exit code \(code)")
             }
+            
+            print("compiled \(input) to \(airOutput)")
             
             airOutputs.append(airOutput)
         }
@@ -73,25 +76,26 @@ struct CIMetalCompilerTool: ParsableCommand {
             print("linking \(airFile) to metallib")
             
             let metalLibOutput = "\(cache)/\(name).metallib"
-            let p = Process()
-            p.executableURL = xcRunURL
-            p.arguments = [
-                "metallib",
-                "--cikernel",
-                airFile,
-                "-o",
-                metalLibOutput
-            ]
             
-            try p.run()
-            p.waitUntilExit()
+            let result = try await Subprocess.run(
+                executable,
+                arguments: Arguments([
+                    "metallib",
+                    "--cikernel",
+                    airFile,
+                    "-o",
+                    metalLibOutput
+                ]),
+                output: .discarded
+            )
             
-            let status = p.terminationStatus
-            
-            if status != 0 {
-                throw CompileError(message: "Failed to link \(airFile) with exit code \(status)")
-            } else {
-                print("compiled \(airFile) to \(metalLibOutput)")
+            switch result.terminationStatus {
+            case .exited(let code):
+                if code != 0 {
+                    throw CompileError(message: "Failed to link \(airFile) with exit code \(code)")
+                }
+            case .unhandledException(let code):
+                throw CompileError(message: "Failed to link \(airFile) with exit code \(code)")
             }
             
             metalLibs.append(metalLibOutput)
@@ -105,25 +109,27 @@ struct CIMetalCompilerTool: ParsableCommand {
         // NOTE: This command is different from the one that was first introduced in WWDC20:
         // https://developer.apple.com/videos/play/wwdc2020/10021
         // The old command is obsolete and no longer works.
-        let p = Process()
-        p.executableURL = xcRunURL
-        p.arguments = [
-            "metal",
-            "-fcikernel",
-            "-o",
-            output,
-        ] + airOutputs
+        let result = try await Subprocess.run(
+            executable,
+            arguments: Arguments([
+                "metal",
+                "-fcikernel",
+                "-o",
+                output,
+            ] + airOutputs),
+            output: .discarded
+        )
         
-        try p.run()
-        p.waitUntilExit()
-        
-        let status = p.terminationStatus
-        
-        if status != 0 {
-            throw CompileError(message: "Failed to merge to \(output) with exit code \(status)")
-        } else {
-            print("====CIMetalCompilerTool completed!")
+        switch result.terminationStatus {
+        case .exited(let code):
+            if code != 0 {
+                throw CompileError(message: "Failed to merge to \(output) with exit code \(code)")
+            }
+        case .unhandledException(let code):
+            throw CompileError(message: "Failed to merge to \(output) with exit code \(code)")
         }
+        
+        print("====CIMetalCompilerTool completed!")
     }
 }
 #else
