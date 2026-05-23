@@ -32,25 +32,30 @@ struct CIMetalPlugin: BuildToolPlugin {
         // Sort for deterministic ordering across invocations.
         let sortedPaths = paths.sorted { $0.path < $1.path }
 
-        var lines = [
-            "#!/bin/sh",
-            "set -e",
-            "mkdir -p '\(cacheDir.path())'",
-            "mkdir -p '\(outputDir.path())'",
-        ]
-
         var airFiles: [String] = []
-        for metalPath in sortedPaths {
+        let compileLines = sortedPaths.map { metalPath -> String in
             let name = metalPath.deletingPathExtension().lastPathComponent
             let airPath = cacheDir.appending(path: "\(name).air").path()
             airFiles.append(airPath)
-            lines.append("/usr/bin/xcrun metal -c -fcikernel '\(metalPath.path())' -o '\(airPath)' -fmodules=none")
-        }
+            return "/usr/bin/xcrun metal -c -fcikernel '\(metalPath.path())' -o '\(airPath)' -fmodules=none"
+        }.joined(separator: "\n")
 
         let airArgs = airFiles.map { "'\($0)'" }.joined(separator: " ")
-        lines.append("/usr/bin/xcrun metal -fcikernel -o '\(output.path())' \(airArgs)")
 
-        let script = lines.joined(separator: "\n")
+        let script = """
+            #!/bin/sh
+            set -e
+
+            # Create directories for intermediate .air files and the final .metallib
+            mkdir -p '\(cacheDir.path())'
+            mkdir -p '\(outputDir.path())'
+
+            # Compile each .metal source into a .air bitcode file
+            \(compileLines)
+
+            # Link all .air files into a single default.metallib
+            /usr/bin/xcrun metal -fcikernel -o '\(output.path())' \(airArgs)
+            """
         let scriptPath = workDir.appending(path: "compile_metal.sh")
         try script.write(toFile: scriptPath.path(), atomically: true, encoding: .utf8)
 
