@@ -13,7 +13,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.0.0"),
     ],
     targets: [
-        .plugin(name: "CIMetalCompilerPlugin", capability: .buildTool()),
+        .plugin(name: "CIMetalCompilerPlugin", capability: .buildTool(), dependencies: ["CIMetalCompilerTool"]),
         .executableTarget(name: "CIMetalCompilerTool", dependencies: [
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ]),
