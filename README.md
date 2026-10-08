@@ -57,9 +57,9 @@ let url = Bundle.module.url(forResource: "default", withExtension: "metallib")
 
 # How does it work under the hood
 
-It internally iterates over the directory to find all files that end with "metal".
+It internally iterates over the directory to find all files that end with "metal" (shaders) and "h" (headers included by the shaders).
 
-Then it uses the equivalent command to create the intermediate files:
+Then it uses the equivalent command to create the intermediate files, compiling the shaders in parallel:
 
 ```shell
 xcrun metal -c -fcikernel MyKernel.metal -o MyKernel.air "-fmodules=none" 
@@ -67,33 +67,21 @@ xcrun metal -c -fcikernel MyKernel.metal -o MyKernel.air "-fmodules=none"
 
 > Clang enables Modules for Metal by default. Enabling Modules will cause the build to fail when running on Xcode Cloud, as it may not have permissions to write the files to the system default cache dir. Thus, disabling Modules by specifying `-fmodules=none` or specifying the dir in the plugin sandbox dir `-fmodules-cache-path=xxxx` will do the trick.
 
-For each intermediate file:
+The intermediate files are then merged into one `default.metallib`:
 
 ```shell
-xcrun metallib --cikernel MyKernel.air -o MyKernel.metallib
+xcrun metal -fcikernel -o default.metallib MyKernel1.air MyKernel2.air ...
 ```
 
-Those `metallib` can be already used directly in code:
+## Caching
 
-```swift
-let resource = "your_metallib_name"
+Xcode re-runs the plugin command whenever the build environment changes, e.g. switching run destinations or building for SwiftUI Previews, even if no shader changed. To keep these re-runs cheap, each `.air` file is cached in the plugin work directory, keyed by the hash of:
 
-guard let url = Bundle.module.url(forResource: resource, withExtension: "metallib") else {
-    return nil
-}
+- The shader file's content.
+- The content of all headers in the target. Changing a header recompiles all shaders.
+- The compile environment: `SDKROOT`, `DEVELOPER_DIR`, `TOOLCHAINS` and `*_DEPLOYMENT_TARGET`.
 
-guard let data = try? Data(contentsOf: url) else {
-    return nil
-}
-
-let kernel = try? CIKernel(functionName: functionName, fromMetalLibraryData: data)
-```
-
-They can be then merged into one `default.metallib`:
-
-```shell
-xcrun metal -fcikernel -o default.metallib MyKernel1.metallib MyKernel2.metallib ...
-```
+Only shaders without a cached `.air` are compiled. Cached files unused for 7 days are removed.
 
 # Useful Links
 

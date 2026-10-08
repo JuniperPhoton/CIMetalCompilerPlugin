@@ -6,12 +6,23 @@ import PackagePlugin
 struct CIMetalPlugin: BuildToolPlugin {
     func createBuildCommands(context: PackagePlugin.PluginContext, target: PackagePlugin.Target) async throws -> [PackagePlugin.Command] {
         var paths: [URL] = []
+        var headers: [URL] = []
         
         target.directoryURL.walk { path in
-            if path.pathExtension == "metal" {
+            switch path.pathExtension {
+            case "metal":
                 paths.append(path)
+            case "h":
+                headers.append(path)
+            default:
+                break
             }
         }
+        
+        // Sort to keep the command line stable: a different order changes the task signature,
+        // which makes Xcode re-run the command.
+        paths.sort { $0.path() < $1.path() }
+        headers.sort { $0.path() < $1.path() }
         
         let cache = context.pluginWorkDirectoryURL.appending(path: "cache")
         let output = context.pluginWorkDirectoryURL.appending(path: "default.metallib")
@@ -30,9 +41,10 @@ struct CIMetalPlugin: BuildToolPlugin {
                 arguments: [
                     "--output", output.path(),
                     "--cache", cache.path(),
-                ] + paths.map(\.path),
+                ] + headers.flatMap { ["--header", $0.path()] } + paths.map(\.path),
                 environment: [:],
-                inputFiles: paths,
+                // Headers are declared as inputs so that editing them triggers a rebuild.
+                inputFiles: paths + headers,
                 outputFiles: [
                     output
                 ]
